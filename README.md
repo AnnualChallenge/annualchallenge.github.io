@@ -1,5 +1,5 @@
 # 15 Jan 2025
-To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/) tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
+To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/)tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
 - The Jekyll build process takes the content within the Jekyll's root directory and converts it to HTML (or copies it if there is no Front Matter) and places it into the \_site folder.
 - It keeps to the directory structure you define (unless explicitly configured otherwise).
 - Within each folder, if you have an index.html, it treats it as the default page for the that directory.
@@ -21,8 +21,9 @@ Front Matter is simply YAML that can be references within the page using Liquid 
 
 To get the rough structure for this page, I've used ChatGPT - as it is pretty good at coming up with rough templates to work from. The direction given to ChaptGPT is that it has to be simple and clean and that it needs to use Bootstrap.
 
-Create the default template - `\_layouts/default.html`
+Create the default template - \_layouts/default.html.
 ```
+{% raw %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -31,8 +32,7 @@ Create the default template - `\_layouts/default.html`
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <!-- Bootstrap CSS -->
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
       rel="stylesheet"
     >
 
@@ -50,15 +50,14 @@ Create the default template - `\_layouts/default.html`
     {% include footer.html %}
 
     <!-- Bootstrap JS -->
-    <script
-      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js">
+    <script      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js">
     </script>
   </body>
 </html>
-
+{% endraw %}
 ```
 
-Create the Nav Bar - `\_includes\navbar.html`
+Create the Nav Bar - `_includes\navbar.html`
 ```
 <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
   <div class="container">
@@ -91,8 +90,9 @@ Create the Nav Bar - `\_includes\navbar.html`
 </nav>
 ```
 
-Add the footer: `\_includes/footer.html`
+Add the footer: `_includes/footer.html`
 ```
+{% raw %}
 <footer class="bg-light border-top py-3 mt-auto">
   <div class="container text-center text-muted">
     <small>
@@ -100,6 +100,7 @@ Add the footer: `\_includes/footer.html`
     </small>
   </div>
 </footer>
+{% endraw %}
 ```
 
 Add the style sheets: `assets/css/custom.css`
@@ -137,11 +138,11 @@ This is a **simple Jekyll site using Bootstrap**.
 You can focus on content and let Bootstrap handle the structure.
 ```
 
-Finally update `\_config.yml` to add the site's title.
+Finally update `_config.yml` to add the site's title.
 ```
 title: My Bootstrap Jekyll Site
 ```
-The output is fairly basic looking, but it is a start.
+The output is fairly basic looking, but it is a start. Testing on GitHub Pages though isn't going as well... It looks like of borked it! I'm going to have to spend some time working out how to get Jekyll content developed and tested locally into Pages. 
 # 10 Jan 2025
 To ensure I can do some development and editing without having to wait for Github Pages to update, I've installed Jekyll locally. I'm using a Mac with Brew, to install all of the Jekyll dependencies, following these instructions: [jekyllrb.com](https://jekyllrb.com/docs/). This entry takes you through the steps I've taken to install Ruby and Jekyll and to get the test server running.
 
@@ -217,7 +218,3 @@ To keep costs low - I've done the following:
 - I've configured Github pages to host this Blog, as it is free and uses Markdown (so I don't need to spent time writing HTML / Javascript / CSS, or dealing with a CMS, like Wordpress).
 
 The look and feel of Github pages is a bit shoddy. I think I'll next spend a bit of time working on the styling of it; after which, I will  look into methods to simplify the publishing process - 'git' would be the simplest approach, but for the 'fun' bit I thinking of coding something rudimentary in Python to do the publishing bit.
-
-
----
-
