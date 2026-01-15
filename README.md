@@ -1,5 +1,5 @@
 # 15 Jan 2025
-To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/)tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
+To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/) tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
 - The Jekyll build process takes the content within the Jekyll's root directory and converts it to HTML (or copies it if there is no Front Matter) and places it into the \_site folder.
 - It keeps to the directory structure you define (unless explicitly configured otherwise).
 - Within each folder, if you have an index.html, it treats it as the default page for the that directory.
