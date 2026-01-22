@@ -1,9 +1,103 @@
----
-# Feel free to add content and custom Front Matter to this file.
-# To modify the layout, see https://jekyllrb.com/docs/themes/#overriding-theme-defaults
+# 22 Jan 2025
+The challenge I have is that I'm using Obsidian (a note taking open-source application that uses `markdown`) to update the blog. This is stored in a separate folder to that of where my Jekyll site is hosted on my Mac. I want to still keep them separate, but at the same time, I don't want to have to manually copy files across, to then commit and push the changes into GitHub.
 
-layout: default
----
+I'm going to try using hard-links `$ ln SOURCE DEST`. This will hopefully allow Git to commit the changes to the content, rather than committing a the link destination if I was just using a symbolic link.
+
+Before executing the following line, make sure the old `index.md` is backed-up / renamed first.
+
+```
+$ ln <directory_to_obsidian_files>/myblog.md <dictory_to_blog_content>index.md
+```
+
+
+# 20 Jan 2025
+So I've created a git repo on my MAC; however, I've also got a running repo on GitHub where I was manually updating the files within GitHub. To avoid any issues I've decided to call the `main` branch `master` instead. 
+
+First step to getting access is to create an SSH key:
+```
+$ ssh-keygen -t ed25519 -C "<email_address_used_for_GitHub>"
+```
+
+It should prompt for a filename (or suggest using the default `/Users/<mac_name>/.ssh/id_ed25519`). Choose a different filename if needed and then provide it with a passphrase when requested.
+
+Edit or add the following to the file: `~/.ssh/config`.
+
+```
+Host github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+```
+
+Run the ssh-agent in the background and add the new SSH key to the agent (including adding the pass phrase to the Apple Key Chain. Note that any previous GitHub SSH keys (if used  before) will need to be removed from `~/.ssh/known_hosts, otherwise SSH will throw a wobbly.
+
+```
+$ eval "$(ssh-agent -s)"
+$ ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+```
+
+Finally, add the public key to the GitHub account using the following [instructions](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account)
+
+Pushing from the local git repo, to GitHub, add the following to make sure there is a connection to GitHub:
+
+```
+$ git remote add origin git@github.com:<repo_name>
+$ git remote -v
+```
+
+Then push into GitHub (note that I've pushed to master rather than main. This needs to be changed in GitHub Pages to make sure the site is coming from the master branch now):
+
+```
+$ git push -u origin master
+```
+
+# 17 Jan 2025
+I managed to fix the site. I stripped out everything from `_config.yml`, apart from:
+```
+title: A Year Of Code
+```
+
+Seemed to work! Not sure why though.
+
+The next step is being able to more easily publish changes without having to manually update the site. Time to remind myself as to how 'git' works.
+
+Getting my up to speed, I've gone [W3Schools]([https://git-scm.com/book/ms/v2/Getting-Started-First-Time-Git-Setup](https://www.w3schools.com/git/default.asp?remote=github))
+
+Setting up git
+```
+$ git config --global user.name "<username>"
+$ git config --global user.email <email>
+$ git config --global core.editor vi
+```
+
+Initialise the repo and create the `main` branch and add all the site's files.
+
+```
+$ git init
+$ git add _config.yml _includes/ _layouts/ 404.html about.md index.md assets
+```
+
+Confirm that the necessary files / folders have been staged using:
+
+```
+$ git status
+```
+
+If any files / folders have been added by mistake, they can be removed from staging with the following command:
+
+```
+$ git restore --staged <file>
+```
+
+Finally, committing the staged changes and reviewing the commit log to make sure it worked.
+
+```
+$ git commit -m "First commit of the site."
+```
+Next steps:
+- Get the changes into GitHub such that they are published into GitHub Pages.
+- Do something to link my Obsidian markdown file (which is maintained in the Obsidian folder) into the git repository. I'm thinking on the lines of OSX hard links.
+
 # 15 Jan 2025
 To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/)tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
 - The Jekyll build process takes the content within the Jekyll's root directory and converts it to HTML (or copies it if there is no Front Matter) and places it into the \_site folder.
