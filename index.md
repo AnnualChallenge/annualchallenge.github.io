@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # 22 Jan 2025
 The challenge I have is that I'm using Obsidian (a note taking open-source application that uses `markdown`) to update the blog. This is stored in a separate folder to that of where my Jekyll site is hosted on my Mac. I want to still keep them separate, but at the same time, I don't want to have to manually copy files across, to then commit and push the changes into GitHub.
 
@@ -9,6 +13,7 @@ Before executing the following line, make sure the old `index.md` is backed-up /
 $ ln <directory_to_obsidian_files>/myblog.md <dictory_to_blog_content>index.md
 ```
 
+I've run into another problem. Obsidian doesn't add Front Matter. The local Jekyll server needs the Front Matter otherwise it breaks. Pages is also acting a little strange without it. However, manually adding the Front Matter using `vi` seems to stay put even after updating the document in Obsidian. Feels a little weak... but it is working for now.
 
 # 20 Jan 2025
 So I've created a git repo on my MAC; however, I've also got a running repo on GitHub where I was manually updating the files within GitHub. To avoid any issues I've decided to call the `main` branch `master` instead. 
