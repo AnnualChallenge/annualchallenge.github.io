@@ -1,6 +1,23 @@
 ---
 layout: default
 ---
+# 25 Jan 2026
+First project - I thought I'd try something simple'ish first. I'm going to build a basic honey-pot with python. The primary objective is to detect suspicious behaviour in an environment; i.e. something is trying to connect to a port that shouldn't be being used.
+
+Here's a set of initial requirements to work from.
+1. The system must be capable of monitor any TCP and UDP ports.
+2. The system must be able to detect TCP connection attempts (e.g. SYN packets)
+3.  The system must be able to detect UDP packets being sent to any port.
+4. The system must be able to operate with concurrent connections.
+5. All connection attempts and ongoing connection engagements,  must be logged to a log file specified either on the command line or through the a configuration file.
+6. If the log file already exists, events must be appended to the file (not overwriting the logs).
+7. Log entries must contain as a minimum:
+	- A timestamp.
+	- The protocol (TCP or UDP).
+	- Source and destination IPs
+	- Source and destination ports
+	- A truncated byte stream containing data send as a part of the connection or connection request (truncated to protect the log files from being saturated if large quantities of data is being sent).
+
 
 # 22 Jan 2025
 The challenge I have is that I'm using Obsidian (a note taking open-source application that uses `markdown`) to update the blog. This is stored in a separate folder to that of where my Jekyll site is hosted on my Mac. I want to still keep them separate, but at the same time, I don't want to have to manually copy files across, to then commit and push the changes into GitHub.
@@ -104,7 +121,7 @@ Next steps:
 - Do something to link my Obsidian markdown file (which is maintained in the Obsidian folder) into the git repository. I'm thinking on the lines of OSX hard links.
 
 # 15 Jan 2025
-To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/)tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
+To understand a bit more about Jekyll, I recommend starting with the [step-by-step](https://jekyllrb.com/docs/step-by-step/01-setup/) tutorial. For the purposes of my GitHub Pages blog, the things to be aware of are:
 - The Jekyll build process takes the content within the Jekyll's root directory and converts it to HTML (or copies it if there is no Front Matter) and places it into the \_site folder.
 - It keeps to the directory structure you define (unless explicitly configured otherwise).
 - Within each folder, if you have an index.html, it treats it as the default page for the that directory.
