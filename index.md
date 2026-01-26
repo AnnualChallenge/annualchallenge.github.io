@@ -1,6 +1,81 @@
 ---
 layout: default
 ---
+# 26 Jan 2026
+I've created a GitHub repo, which I'm calling [sneak](https://github.com/AnnualChallenge/sneak).A nice short name for a short project... hopefully. 
+
+To configure `git` and synch with Github, I ran the following:
+
+```
+$ mkdir sneak && cd sneak
+$ git remote add origin git@github.com:AnnualChallenge/sneak.git
+$ git remote -v
+$ git pull origin main
+```
+
+My preferred Python editor is PyCharm CE. Using PyCharm, I've set up a new project in the `sneak` directory.
+
+For the design, I'm going to use object oriented code. I've defined a class called `SneakListener`. The idea is that a `SneakListener` object will be instantiated per open port. It will hopefully make the code cleaner, as everything for dealing with connections will be contained within the class.
+
+A first step, using the `socket` and `threading` libraries, is creating a simple class that allows for a server socket to be instantiated on a selected port. Per connection to that port, it will spin up with a thread, with a handler function within the class to deal with it. This will permit multiple connections from multiple sources to that one port, without blocking per connection.
+
+```
+import socket  
+import threading  
+  
+HOST = "localhost"   # Listen locally only  
+PORT = 1066       # Listen on this port  
+  
+class SneakListener():  
+    def __init__(self, HOST, PORT):  
+        self.HOST = HOST  
+        self.PORT = PORT  
+  
+    # handler used for each thread.  
+    def handle_client(self, con, addr):  
+        print(f"[CONNECTION] {addr}")  
+        with con:  
+            # Loop whilst connection is retained.  
+            while True:  
+                # Exception handling to deal with termninated-early connections (e.g. nmap SYN scans).  
+                try:  
+                    data = con.recv(1024)  
+                    if not data:  
+                        break  
+                    message = data.decode()  
+                    print(f"[{addr}] {message}")  
+                    con.sendall(f"Echo: {message}".encode())  
+                except:  
+                    print("Connection terminated early - possibly nmap SYN Scan")  
+  
+        print(f"[DISCONNECTED] {addr}")  
+  
+    # Start method  
+    def start_sneak(self):  
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:  
+            server.bind((HOST, PORT))  
+            server.listen()  
+            print(f"[LISTENING] Server listening on {HOST}:{PORT}")  
+  
+            # Thread call.  
+            while True:  
+                conn, addr = server.accept()  
+                thread = threading.Thread(  
+                    target=self.handle_client,  
+                    args=(conn, addr),  
+                    daemon=True  
+                )  
+                thread.start()  
+  
+if __name__ == "__main__":  
+    mysneak = SneakListener(HOST, PORT)  
+    mysneak.start_sneak()
+```
+
+The main issue with the above code is that it blocks. The `start_sneak` function steps into a while loop and keeps going. So if I want to instantiate multiple `SneakListeners`, they won't be called as the first one is blocking.
+
+The next step is to explore various unblocking techniques, such as using Python `asynchio` or use the non-blocking functionality that comes with the `socket` library. 
+
 # 25 Jan 2026
 First project - I thought I'd try something simple'ish first. I'm going to build a basic honey-pot with python. The primary objective is to detect suspicious behaviour in an environment; i.e. something is trying to connect to a port that shouldn't be being used.
 
