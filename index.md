@@ -1,6 +1,105 @@
 ---
 layout: default
 ---
+# 30 Jan 2026
+In all my years of paying around with Python, whenever dealing with sockets, I've always just copied and pasted samples from the Internet, and then tweaked it a bit so it met my needs. I've always found Python socket programming a bit too involved.
+
+This time I've decided to put in the effort to understand it. Part of that understanding will also be about understanding the various concurrency models that can be used with it. But for now, I'll stick with playing with the `socket` module. 
+
+The sample code below demonstrates the most fundamental part of using `socket`. You first instantiate a socket and then bind it to a host and port - in this case 'localhost' and port 1066. After which you initialise it to listen for incoming connections.
+
+The next two steps are: 1) accepting the connection; and 2) receiving the data from the client. Both default to blocking whilst waiting for something to happen. If you run the code, it will first stop at `s.accept()`; once a connection is made, it will stop at `con.recv()` (where `con` is the socket object created by a connection).
+
+```
+import time  
+def main():  
+    start = time.time()  
+      
+    # Initialise the socket and listen for a connection  
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+    s.bind((HOST, PORT))  
+    s.listen()  
+  
+    # Accept a connection - socket.accept() is blocking  
+    con, addr = s.accept()  
+    print(f"time to accept: {time.time()-start}")  
+  
+    # Receive the data - socket.recv() is blocking  
+    data = con.recv()  
+    print(f"time to receive: {time.time()-start}")  
+  
+    s.close()
+```
+
+This code is pretty useless. It assumes that only one client will ever connect. Therefore there needs to be some kind of Event Loop to check for new connections and then service them.
+
+To avoid the blocking of `accept` and `recv`, you need to set `socket.setblocking(False)`, but then the code very quickly throws a `BlockingIOError`.  
+
+To get concurrency and handle these exceptions, the recommendation is to use either threads, asyncio or selectors.
+
+Just for a bit of fun, I decided to do it myself - see the code below. 
+
+Class `MySocketClass` acts as a container (with methods for new connections). As a part of `__init__`, I pass it the host and port and it then instantiates a socket. This allows me to create multiple sockets (for various ports) that are self contained within various instances of `MySocketClass`. 
+
+There are two methods: one to check for new connections (`checkForNewConnection`) and the other to check for available data (`checkForData`). For `accept` and `recv` calls, I've used `try/except` to ignore the `BlockingIOError` exceptions.
+
+I've created a `queue` - which is just a list - to hold all new connections that are then checked and serviced by `checkForData`.
+
+Finally, within `main`, is my event loop, which is  an infinite `while` loop, which keeps running `checkForNewConnections` and `checkForData`.
+
+```
+import socket  
+class MySocketClass():  
+    def __init__(self, host_and_port):  
+        self.socketObject = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+        self.socketObject.bind(host_and_port)  
+        self.socketObject.listen()  
+        self.socketObject.setblocking(False)  
+  
+        self.queue = []  
+    def checkForNewConnection(self):  
+        try:  
+            conn, addr = self.socketObject.accept()  
+            self.queue.append(conn)  
+        except:  
+            pass  
+  
+    def checkForData(self):  
+        data = ""  
+        for i in self.queue:  
+            try:  
+                data = i.recv(1024)  
+                if data:  
+                    print(data)  
+                else:  
+                    i.close()  
+                    self.queue.remove(i)  
+            except:  
+                pass  
+    def close(self):  
+        self.socketObject.close()  
+  
+def main():  
+    socket_a = MySocketClass(("localhost", 1066))  
+    socket_b = MySocketClass(("localhost", 1067))  
+  
+    sockets = [socket_a, socket_b]  
+  
+    # Event loop  
+    while True:  
+        for i in sockets:  
+            i.checkForNewConnection()  
+            i.checkForData()  
+  
+if __name__ == '__main__':  
+    main()
+```
+
+The end result works, but it is resource intensive. As can be seen in the screen-grab below, the code is consuming about 100% of a CPU's time handling the event loop. I could probably significantly drop the CPU load if I put in `time.sleep(...)`, but I'm not going to bother.
+
+![](<assets/images/Pasted image 20260130130204.png>)
+
+Next: I'm going to play with selectors, which is apparently what `asyncio` is built on.
 # 26 Jan 2026
 I've created a GitHub repo, which I'm calling [sneak](https://github.com/AnnualChallenge/sneak).A nice short name for a short project... hopefully. 
 
