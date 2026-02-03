@@ -1,6 +1,83 @@
 ---
 layout: default
 ---
+# 3 Feb 2026
+The selectors module in Python provides a high-level, efficient way to do I/O multiplexing - that is, waiting for and responding to I/O readiness (read/write) on multiple file objects at the same time.
+
+It’s mainly used for event-driven networking and under the hood chooses the best available OS mechanism (like epoll, kqueue, poll, or select) for your platform. It's main use case is for socket management in Python.
+
+The following code demonstrates the fundamental principles for selectors with sockets.
+
+```
+import selectors, socket  
+  
+# Instanstiate a selector  
+sel = selectors.DefaultSelector()  
+  
+# Create a basic socket  
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:  
+    sock.bind(('', 1066))  
+    sock.listen()  
+    sock.setblocking(False)  
+    sel.register(sock, selectors.EVENT_READ, data=None)  
+  
+# Pause (block) until Read or Write is ready to pull from or send to socket object.  
+sel.select()
+```
+
+Start by first create a `selectors` object (using `DefaultSelector`) to choose the systems defaulting polling / interrupt approach. A socket is then instantiated and set to non-blocking. The `socket` object is then registered with the selector (i.e., it is to be handled via the selector). Finally, `selectors.select()` is called and blocks, waiting for an interrupt to respond to a new connection request (or data read request, when servicing sockets).
+
+The immediate benefit of using selectors, versus writing your own event loop is the performance. The python app is consuming negligible CPU resource whilst waiting for the selector to return, compared to my previous ham-fisted approach.
+
+When registering a fileobj with a selector, there is a data field that needs to be set. The sample code within [Python Docs](https://docs.python.org/3/library/selectors.html) demonstrates how this can be used to great effect. In this sample, it is used to hold function pointers. When `sel.selector()` returns, custom code can then trawl through the registered objects that need servicing and then use the held function pointers to call the relevant handler functions. 
+
+The following code is an example of how new connections and data read requests can be handled in this way. Multiple connections to port 1066 can be made and used with next to no CPU performance impact.
+
+```
+import selectors, socket  
+  
+# Instanstiate a selector  
+sel = selectors.DefaultSelector()  
+  
+# Handler for new connection requests  
+def connect(socObj, mask):  
+    conn, addr = socObj.accept()  
+    conn.setblocking(False)  
+      
+    # Register the new connection with the data-receive handler  
+    sel.register(conn, selectors.EVENT_READ, receive)  
+  
+# Handler for when data is ready to be received def receive(socObj, mask):  
+    data = socObj.recv(1024)  
+    if data:  
+        print(data)  
+    else:  
+        # Unregister if data was empty (connection closed)  
+        sel.unregister(socObj)  
+          
+def main():  
+  
+    # Create and bind the socket  
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:  
+        sock.bind(('localhost', 1066))  
+        sock.listen()  
+        sock.setblocking(False)  
+          
+        # Register socket with selector and point to the connection handler function  
+        sel.register(sock, selectors.EVENT_READ, data=connect)  
+  
+        # Event loop using select to handle new connections and data read requests.  
+        while True:  
+            # If there are any queued events, return and handle them.  
+            events = sel.select()  
+            for key, mask in events:  
+                # Calling the handler  
+                key.data(key.fileobj, mask)  
+  
+if __name__ == '__main__':  
+    main()
+
+```
 # 30 Jan 2026
 In all my years of paying around with Python, whenever dealing with sockets, I've always just copied and pasted samples from the Internet, and then tweaked it a bit so it met my needs. I've always found Python socket programming a bit too involved.
 
