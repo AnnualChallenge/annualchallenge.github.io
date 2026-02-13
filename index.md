@@ -1,6 +1,196 @@
 ---
 layout: default
 ---
+# 13 Feb 2026
+
+## The Basics
+I've spent a bit of time getting to grips with the `asyncio` module - which is not an easy thing to grasp. Its primary purpose is to permit for concurrent programming (similar to what threading provides), but within a single thread. Using `asyncio` should technically be more efficient than using threading given the context-swapping overhead associated with threads.
+
+`asyncio` Works concurrently through its own event loop, which is able to pause asynchronous functions and then come back to them when they require handling. The underlying mechanisms I believe is built upon Python generators; i.e. asynchronous functions `yield` to the event loop.
+
+When learning to develop using `asyncio`, there are two Python expressions that need to be understood: `async` and `await`. 
+
+`async` Defines a coroutine (a function that is to be handled via the event loop), and it is something that is added at the beginning of every function's definition.
+```
+import asyncio
+
+# Defining a coroutine
+async def test_coroutine():
+	print("this is a test")
+	
+asyncio.run(test_coroutine())
+```
+
+To run the coroutine, in the above example, I am using `asyncio.run()`. This on its own doesn't make for a single-threaded concurrent program, as all the run command is doing is initialising the event loop and then executing the referenced coroutine. 
+
+If you try to run the coroutine without `asyncio.run()`, all it does is return a coroutine object. To run it, it needs to be handled by `asyncio`, hence the run command.
+
+Although `asyncio.run()` runs the coroutine function passed to it, if the coroutine then wishes to run any other coroutines itself, then you need to use the `await` expression. If you don't, a coroutine object is returned and Python complains. 
+
+The following shows the use of `await` to run the coroutines:
+```
+import asyncio
+
+async def test_coroutine1():
+	print("test coroutine1")
+	
+async def test_coroutine2():
+	print("test coroutine2")
+	
+def test_routine():
+	print("test routine")
+	
+# If coroutines aren't awaited, then a RuntimeWarning exception is thrown
+# This is a common pattern in asyncio programming - using main as the top-level
+# coroutine.
+async def main():
+	# await coroutines
+	await test_coroutine1()
+	await test_coroutine2()
+	
+	# call normal functions in the usual way
+	test_routine()
+
+asyncio.run(main())
+```
+
+## Concurrent Programming
+What is written above isn't concurrent. The example code doesn't demonstrate any asynchronous behaviour and therefore will execute in order (synchronously).
+
+When the event loop is up and running, when `await` expressions are encountered in the code, if the  coroutine that proceeds the `await` expression, isn't ready, the purpose of `await` is to pause the encapsulating function until it is ready to respond. In the above example, that would mean `main()` is paused until the blocking coroutine (such as `test_coroutine1()`) is handled.
+
+It is common to demonstrate these principles with `await asyncio.sleep()`, which introduces asynchronous behaviour to coroutines. The following example demonstrates the `sleep` function.
+```
+import asyncio  
+  
+async def test_coroutine(delay):  
+    print(f"Test coroutine - sleep for {delay}")  
+    await asyncio.sleep(2)  
+    print(f"Sleep for {delay}, finished")  
+    return 0  
+  
+async def main():  
+    await test_coroutine(1)  
+    await test_coroutine(3)  
+    await test_coroutine(5)  
+  
+asyncio.run(main())
+```
+
+Again, this isn't demonstrating concurrent execution. Each call of `test_coroutine()` waits for the previous one to complete. This is the terminal output.
+```
+Test coroutine - sleep for 1
+Sleep for 1, finished
+Test coroutine - sleep for 3
+Sleep for 3, finished
+Test coroutine - sleep for 5
+Sleep for 5, finished
+```
+
+To get the event loop properly working, you need to convert the coroutines into tasks. This adds a task wrapper, which means it can be handled by the event loop asynchronously.  This requires a small change to the above code, to create tasks.
+
+If you recall, calling a coroutine without an `await` returns a coroutine object. The `asyncio.create_task()` method then provides a task wrapper to the coroutine object, which then can be scheduled and handled by the event loop.
+```
+import asyncio  
+  
+async def test_coroutine(delay):  
+    print(f"Test coroutine - sleep for {delay}")  
+    await asyncio.sleep(2)  
+    print(f"Sleep for {delay}, finished")  
+    return 0  
+  
+async def main():  
+    task1 = asyncio.create_task(test_coroutine(1))  
+    task2 = asyncio.create_task(test_coroutine(3))  
+    task3 = asyncio.create_task(test_coroutine(5))  
+  
+    await task1  
+    await task2  
+    await task3  
+  
+asyncio.run(main())
+```
+
+By using tasks instead, the terminal output below shows the coroutines are now being run asynchronously.
+```
+Test coroutine - sleep for 1
+Test coroutine - sleep for 3
+Test coroutine - sleep for 5
+Sleep for 1, finished
+Sleep for 3, finished
+Sleep for 5, finished
+```
+
+Instead of creating a series of tasks and then 'awaiting' each of them, the preferred method is to use `await asyncio.gather()` . Tasks and coroutines can be called using this method and it will automatically apply the task wrapper to the objects and hand them over to the event loop.
+```
+import asyncio  
+  
+async def test_coroutine(delay):  
+    print(f"Test coroutine - sleep for {delay}")  
+    await asyncio.sleep(2)  
+    print(f"Sleep for {delay}, finished")  
+  
+async def main():  
+    await asyncio.gather(test_coroutine(1), test_coroutine(3), test_coroutine(5))  
+  
+asyncio.run(main())
+```
+
+## Adding Asynch Functionality to a Synch code
+`asyncio` Can be used to handle synchronous functions asynchronously. The following  demonstrates how this is done using `run_in_executor()`. The way `asyncio` handles synchronous functions is to hand them off to either a thread or process pool, to prevent them from blocking the rest of the code. The downside is that this approach adds on the thread / process handling overhead. 
+```
+import asyncio  
+import time  
+  
+def synchronous_code(delay=2):  
+    print(f"Doing a synchronous delay of {delay} seconds")  
+    time.sleep(delay)  
+    print(f"Finished waiting for {delay} seconds")  
+  
+  
+async def main():  
+    loop = asyncio.get_running_loop()  
+  
+    loop.run_in_executor(None, synchronous_code, 1)  
+    loop.run_in_executor(None, synchronous_code, 3)  
+    loop.run_in_executor(None, synchronous_code, 5)  
+    
+asyncio.run(main())
+```
+
+Here is a more practical example using actual asynchronous events - connecting to and requesting web-page content.
+```
+import asyncio  
+import requests
+
+def async_get(URL):  
+    print(f"Requesting {URL}")  
+    req = requests.get(URL).text  
+    print(f"Finished {URL} - size is {len(req)}")  
+
+async def main():  
+    loop = asyncio.get_running_loop()  
+  
+    req1 = loop.run_in_executor(None, async_get, "http://example.com")  
+    req2 = loop.run_in_executor(None, async_get, "https://google.com")  
+    req3 = loop.run_in_executor(None, async_get, "https://bbc.co.uk")  
+  
+asyncio.run(main())
+```
+
+The output shows the requests are being dealt with asynchronously (using threads):
+```
+Requesting http://example.com
+Requesting https://google.com
+Requesting https://bbc.co.uk
+Finished http://example.com - size is 528
+Finished https://bbc.co.uk - size is 879322
+Finished https://google.com - size is 17401
+```
+
+Although this is exploiting `asyncio` to introduce asynchronous behaviour, it is still cheating as the synchronous functions are being hived off into threads. It isn't truly single threaded. 
+
+Next, I'm going to explore how asynchronous tasks are created at a low-level, so I can grasp the mechanisms that make them work.
 # 3 Feb 2026
 The selectors module in Python provides a high-level, efficient way to do I/O multiplexing - that is, waiting for and responding to I/O readiness (read/write) on multiple file objects at the same time.
 
