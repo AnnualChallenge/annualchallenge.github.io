@@ -1,6 +1,172 @@
 ---
 layout: default
 ---
+# 27 Feb 2026
+For this entry I've done the following. I've spent a bit of time exploring of the nature of awaiting coroutines and tasks. I also briefly touch on the use of futures to coordinate activities between coroutines. Finally, I tackle the challenge of using the `socket` module asynchronously with what is provided by `asyncio`. 
+
+It is worth highlighting that `asyncio` already provides a solution for the handling of asynchronous sockets, that I'll be using when I get back into working on `sneak`. In the interest of learning I've tried to avoid doing it the 'right' way; instead I've used all that I've learned so far about `asyncio` to write code to use the `socket` module asynchronously.
+## Exploring the Blocking Nature of 'await'
+I've covered `await` before, but I thought it would be worth reiterating its basic workings to understand its use in 'blocking' coroutines. The `await` expression is a blocking expression that blocks the parent coroutine that calls it - even if the awaited expression is `await asyncio.create_task(coroutine())`. This adds an additional dimension to writing asynchronous code that has been causing me a headache. You need to ensure that the coroutine that is calling `await` can be blocked until the awaited tasks or coroutines have completed (and not expecting code beneath the `await` statement to run as the task is being handled by the event loop).
+
+The following code shows the blocking nature of `await`. Within  `main()`,  the string `<< Finish main` isn't printed until the two gathered tasks are completed. `main()` Is effectively blocked until all the tasks finish.
+```
+import asyncio  
+  
+async def coroutine(delay):  
+    print(f"Begin delay of: {delay}")  
+    await asyncio.sleep(delay)  
+    print(f"End delay of: {delay}")  
+  
+  
+async def main():  
+    print(">> Starting main")  
+    await asyncio.gather(coroutine(2), coroutine(3))  
+    print("<< Finish main")  
+  
+asyncio.run(main())
+```
+
+Here is the output:
+```
+>> Starting main
+Begin delay of: 2
+Begin delay of: 3
+End delay of: 2
+End delay of: 3
+<< Finish main
+```
+
+With `asyncio.create_task(...)` it is possible of to run tasks without awaiting the parent coroutine function (without putting `await` in front of it). This means that `main()` isn't blocked. You can see this happen when you run the following code. When run, all the `main()` print statements are executed before the `asyncio.create_task()` created tasks finish. Note that I'm using the additional `asyncio.sleep()` statement to keep the code running, otherwise the application quits before the asynchronous tasks have completed (because `main()` isn't being blocked).
+```
+import asyncio  
+  
+async def coroutine(delay):  
+    print(f"Begin delay of: {delay}")  
+    await asyncio.sleep(delay)  
+    print(f"End delay of: {delay}")  
+  
+async def main():  
+    print(">> Starting main")  
+    asyncio.create_task(coroutine(2))  
+    asyncio.create_task(coroutine(3))  
+    print("<< Finish main")  
+  
+    await asyncio.sleep(4)  
+  
+asyncio.run(main())
+```
+
+Here is the output - note the order change in the printed output.
+```
+>> Starting main
+<< Finish main
+Begin delay of: 2
+Begin delay of: 3
+End delay of: 2
+End delay of: 3
+```
+## Exploring the Use of Futures
+In `asyncio`, a future is an object that represents a **result that will be available later**. It’s essentially a placeholder for a value that hasn’t been computed yet.
+
+By using futures, it is possible to coordinate activities between asynchronous tasks. The following code shows this. Coroutine `first()` prints a string and then awaits for the future to be completed. Coroutine `second()` is responsible for setting the futures values once it has completed its own asynchronous tasks. Once the future is set, the awaited coroutine, `first()`, comes back to life and finishes.
+```
+import asyncio  
+  
+async def left(future):  
+    print("left: waiting for right to finish")  
+    # await for the shared future to be set / enter into a finished state  
+    await future  
+    print("left: finishing now that right has finished")  
+  
+async def right(future):  
+    print("right: doing an asynchronous job")  
+    await asyncio.sleep(2)  
+    print("right: finished asynchronous job")  
+    # setting the shared future so that coroutine task 'left' can run  
+    future.set_result(True)  
+  
+async def main():  
+    # Creating a shared future to coordinate execution between left and right.  
+    loop = asyncio.get_running_loop()  
+    future = loop.create_future()  
+  
+    await asyncio.gather(left(future), right(future))  
+  
+asyncio.run(main())
+```
+
+See the output:
+```
+left: waiting for right to finish
+right: doing an asynchronous job
+right: finished asynchronous job
+left: finishing now that right has finished
+```
+## Making Synchronous Sockets, Asynchronous
+The code below is my own bad attempt to use asynchronous programming with the `socket` module.
+
+There are two coroutine functions. One, `accept_connection()`, is for checking for whether there are any connection requests on the bound host and port.  The other, `receive_data()` checks then for when there is any data on those accepted connections.
+
+There is a global list, `buffer`, which is the only signal between the two. `accept_connection()` Adds new connected socket objects to `buffer`. `receive_data()`, iterates through `buffer` to check for any available data and to clear out closed `socket` objects.
+
+The two are run asynchronously through a little trick I discovered. Whenever you want to hand synchronous code by the event handler, use `await asyncio.sleep(0)`. It doesn't actually sleep the code, but instead it is paused by the event handler, to allow the next coroutine task to run.
+```
+import asyncio  
+import socket  
+  
+PORT = 1066  
+HOST = 'localhost'  
+  
+# Instantiate the socket and start listening.  
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+sock.bind((HOST, PORT))  
+sock.setblocking(False)  
+sock.listen()  
+# Global buffer for holding all connection objects  
+buffer = []  
+  
+# Method accept_connection constantly checks for connection requests.  
+# Awaiting asyncio.sleep(0) is used to pass control back to the event loop after each check.  
+async def accept_connection():  
+    global buffer, sock  
+    while True:  
+        try:  
+            conn, addr = sock.accept()  
+            print(f"connected to {addr}")  
+            buffer.append(conn)  
+        except BlockingIOError:  
+            pass  
+        await asyncio.sleep(0)  
+  
+# Method receive_data cycles through the connection buffer and checks for available data.  
+# asyncio.sleep(0) is used to pass control back to the event loop after cycling through the buffer  
+async def receive_data():  
+    global buffer  
+    while True:  
+        # iterate through a buffer copy 'buffer[:] and use enumerate to access the index too'  
+        for index, conn in enumerate(buffer[:]):  
+            try:  
+                data = conn.recv(1024)  
+                if not data:  
+                    # remove the connection object once it is closed.  
+                    buffer.pop(index)  
+                    continue  
+                print(data)  
+            except BlockingIOError:  
+                pass  
+            except ConnectionResetError:  
+                pass  
+        # pass back to the event handler.  
+        await asyncio.sleep(0)  
+  
+async def main():  
+    # Run the two coroutine tasks. The only linking variable is the global buffer for holding  
+    # connection (socket) objects    await asyncio.gather(accept_connection(), receive_data())  
+  
+asyncio.run(main())
+```
+
+Reflecting back on it, the code looks awful. This could most probably be improved by using `asyncio` for loops. Also, I was hoping to maybe use futures in the code too - but I couldn't figure out how to get that working in time. Unfortunately, as I've had enough of `asyncio`, I will be going back to developing `sneak`.
 # 13 Feb 2026
 
 ## The Basics
@@ -53,7 +219,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
 ## Concurrent Programming
 What is written above isn't concurrent. The example code doesn't demonstrate any asynchronous behaviour and therefore will execute in order (synchronously).
 
@@ -135,7 +300,6 @@ async def main():
   
 asyncio.run(main())
 ```
-
 ## Adding Asynch Functionality to a Synch code
 `asyncio` Can be used to handle synchronous functions asynchronously. The following  demonstrates how this is done using `run_in_executor()`. The way `asyncio` handles synchronous functions is to hand them off to either a thread or process pool, to prevent them from blocking the rest of the code. The downside is that this approach adds on the thread / process handling overhead. 
 ```
@@ -197,7 +361,6 @@ The selectors module in Python provides a high-level, efficient way to do I/O mu
 It’s mainly used for event-driven networking and under the hood chooses the best available OS mechanism (like epoll, kqueue, poll, or select) for your platform. It's main use case is for socket management in Python.
 
 The following code demonstrates the fundamental principles for selectors with sockets.
-
 ```
 import selectors, socket  
   
@@ -222,7 +385,6 @@ The immediate benefit of using selectors, versus writing your own event loop is 
 When registering a fileobj with a selector, there is a data field that needs to be set. The sample code within [Python Docs](https://docs.python.org/3/library/selectors.html) demonstrates how this can be used to great effect. In this sample, it is used to hold function pointers. When `sel.selector()` returns, custom code can then trawl through the registered objects that need servicing and then use the held function pointers to call the relevant handler functions. 
 
 The following code is an example of how new connections and data read requests can be handled in this way. Multiple connections to port 1066 can be made and used with next to no CPU performance impact.
-
 ```
 import selectors, socket  
   
@@ -276,7 +438,6 @@ This time I've decided to put in the effort to understand it. Part of that under
 The sample code below demonstrates the most fundamental part of using `socket`. You first instantiate a socket and then bind it to a host and port - in this case 'localhost' and port 1066. After which you initialise it to listen for incoming connections.
 
 The next two steps are: 1) accepting the connection; and 2) receiving the data from the client. Both default to blocking whilst waiting for something to happen. If you run the code, it will first stop at `s.accept()`; once a connection is made, it will stop at `con.recv()` (where `con` is the socket object created by a connection).
-
 ```
 import time  
 def main():  
@@ -313,7 +474,6 @@ There are two methods: one to check for new connections (`checkForNewConnection`
 I've created a `queue` - which is just a list - to hold all new connections that are then checked and serviced by `checkForData`.
 
 Finally, within `main`, is my event loop, which is  an infinite `while` loop, which keeps running `checkForNewConnections` and `checkForData`.
-
 ```
 import socket  
 class MySocketClass():  
@@ -363,7 +523,6 @@ if __name__ == '__main__':
 ```
 
 The end result works, but it is resource intensive. As can be seen in the screen-grab below, the code is consuming about 100% of a CPU's time handling the event loop. I could probably significantly drop the CPU load if I put in `time.sleep(...)`, but I'm not going to bother.
-
 ![](<assets/images/Pasted image 20260130130204.png>)
 
 Next: I'm going to play with selectors, which is apparently what `asyncio` is built on.
@@ -371,7 +530,6 @@ Next: I'm going to play with selectors, which is apparently what `asyncio` is bu
 I've created a GitHub repo, which I'm calling [sneak](https://github.com/AnnualChallenge/sneak).A nice short name for a short project... hopefully. 
 
 To configure `git` and synch with Github, I ran the following:
-
 ```
 $ mkdir sneak && cd sneak
 $ git remote add origin git@github.com:AnnualChallenge/sneak.git
@@ -384,7 +542,6 @@ My preferred Python editor is PyCharm CE. Using PyCharm, I've set up a new proje
 For the design, I'm going to use object oriented code. I've defined a class called `SneakListener`. The idea is that a `SneakListener` object will be instantiated per open port. It will hopefully make the code cleaner, as everything for dealing with connections will be contained within the class.
 
 A first step, using the `socket` and `threading` libraries, is creating a simple class that allows for a server socket to be instantiated on a selected port. Per connection to that port, it will spin up with a thread, with a handler function within the class to deal with it. This will permit multiple connections from multiple sources to that one port, without blocking per connection.
-
 ```
 import socket  
 import threading  
@@ -437,11 +594,9 @@ if __name__ == "__main__":
     mysneak = SneakListener(HOST, PORT)  
     mysneak.start_sneak()
 ```
-
 The main issue with the above code is that it blocks. The `start_sneak` function steps into a while loop and keeps going. So if I want to instantiate multiple `SneakListeners`, they won't be called as the first one is blocking.
 
 The next step is to explore various unblocking techniques, such as using Python `asynchio` or use the non-blocking functionality that comes with the `socket` library. 
-
 # 25 Jan 2026
 First project - I thought I'd try something simple'ish first. I'm going to build a basic honey-pot with python. The primary objective is to detect suspicious behaviour in an environment; i.e. something is trying to connect to a port that shouldn't be being used.
 
@@ -459,14 +614,12 @@ Here's a set of initial requirements to work from.
 	- Source and destination ports
 	- A truncated byte stream containing data send as a part of the connection or connection request (truncated to protect the log files from being saturated if large quantities of data is being sent).
 
-
 # 22 Jan 2025
 The challenge I have is that I'm using Obsidian (a note taking open-source application that uses `markdown`) to update the blog. This is stored in a separate folder to that of where my Jekyll site is hosted on my Mac. I want to still keep them separate, but at the same time, I don't want to have to manually copy files across, to then commit and push the changes into GitHub.
 
 I'm going to try using hard-links `$ ln SOURCE DEST`. This will hopefully allow Git to commit the changes to the content, rather than committing a the link destination if I was just using a symbolic link.
 
 Before executing the following line, make sure the old `index.md` is backed-up / renamed first.
-
 ```
 $ ln <directory_to_obsidian_files>/myblog.md <dictory_to_blog_content>index.md
 ```
@@ -484,7 +637,6 @@ $ ssh-keygen -t ed25519 -C "<email_address_used_for_GitHub>"
 It should prompt for a filename (or suggest using the default `/Users/<mac_name>/.ssh/id_ed25519`). Choose a different filename if needed and then provide it with a passphrase when requested.
 
 Edit or add the following to the file: `~/.ssh/config`.
-
 ```
 Host github.com
   AddKeysToAgent yes
@@ -493,7 +645,6 @@ Host github.com
 ```
 
 Run the ssh-agent in the background and add the new SSH key to the agent (including adding the pass phrase to the Apple Key Chain. Note that any previous GitHub SSH keys (if used  before) will need to be removed from `~/.ssh/known_hosts, otherwise SSH will throw a wobbly.
-
 ```
 $ eval "$(ssh-agent -s)"
 $ ssh-add --apple-use-keychain ~/.ssh/id_ed25519
@@ -502,14 +653,12 @@ $ ssh-add --apple-use-keychain ~/.ssh/id_ed25519
 Finally, add the public key to the GitHub account using the following [instructions](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account)
 
 Pushing from the local git repo, to GitHub, add the following to make sure there is a connection to GitHub:
-
 ```
 $ git remote add origin git@github.com:<repo_name>
 $ git remote -v
 ```
 
 Then push into GitHub (note that I've pushed to master rather than main. This needs to be changed in GitHub Pages to make sure the site is coming from the master branch now):
-
 ```
 $ git push -u origin master
 ```
@@ -534,29 +683,26 @@ $ git config --global core.editor vi
 ```
 
 Initialise the repo and create the `main` branch and add all the site's files.
-
 ```
 $ git init
 $ git add _config.yml _includes/ _layouts/ 404.html about.md index.md assets
 ```
 
 Confirm that the necessary files / folders have been staged using:
-
 ```
 $ git status
 ```
 
 If any files / folders have been added by mistake, they can be removed from staging with the following command:
-
 ```
 $ git restore --staged <file>
 ```
 
 Finally, committing the staged changes and reviewing the commit log to make sure it worked.
-
 ```
 $ git commit -m "First commit of the site."
 ```
+
 Next steps:
 - Get the changes into GitHub such that they are published into GitHub Pages.
 - Do something to link my Obsidian markdown file (which is maintained in the Obsidian folder) into the git repository. I'm thinking on the lines of OSX hard links.
@@ -570,7 +716,6 @@ To understand a bit more about Jekyll, I recommend starting with the [step-by-st
 - To define a layout, you need a \_layouts directory and then, within the 'Front Matter' you need to reference the layout file, you've added to the \_layouts directory
 
 An example of Front Matter for a Blog Post (sample that is included as a part of the install) is:
-
 ```
 ---
 layout: post
@@ -737,15 +882,11 @@ Next steps:
 - Develop a template on localhost.
 - Test the template on Github Pages.
 - Add the most recent blog entries to GitHub pages, built on the new Jekyll template
-
-
 # 1 Jan 2025
 Happy New Year! May 2026 be a happy and prosperous year for all.
 
 Now to start my Year of Code for real!
-
 # 30 Dec 2025
-
 GitHub Pages offers several themes that can be applied to the static site.  
 
 All that is needed is a config file `_config.yml` pointing to the theme to use. 
@@ -764,9 +905,7 @@ The main problem for now is the time between changing the files in the repo, and
 - Modifying the Dinky layout by including a '_layouts/default.html' file
 - Adding bootstrap  Javascript and CSS links.
 - Starting to structure the web page - menu on the left, content in the middle and future advertising to the right, etc.
-
 # 29 Dec 2025
-
 For my 2026 New Year's resolution,  I've decided to set myself technical challenges and document my progress for anyone to follow. I'm starting a bit early, just to get everything set up.
 
 A bit about me: I'm a security architect and I spend most of my working day doing stuff that can't really be considered as hands-on anymore. A typical working week consists of many meeting, lots of emails, writing documents, creating architecture diagrams, supporting business development, and (when I do have some spare time) trying to develop security-architecture strategy. As a result I'm really hankering for that technical, hands-on past.
