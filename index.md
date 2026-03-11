@@ -1,6 +1,90 @@
 ---
 layout: default
 ---
+# 11 March 2026
+Re-visiting `sneak`, I've re-written it using `asyncio` for the connections and `threading` for each listening port. It seems to work reasonably well. Code is below and I'm also uploading this to GitHub - please refer to [sneak](https://github.com/AnnualChallenge/sneak). 
+
+With three listening ports up and running, it is only consuming about 20% of a CPU, which I'm happy with.
+```
+import socket  
+import threading  
+import asyncio  
+  
+# Class to handle connections  
+class SneakListener():  
+    def __init__(self, HOST, PORT):  
+        self.HOST = HOST  
+        self.PORT = PORT  
+  
+    # Coroutine that handles the established connection  
+    async def handle_connection(self, con, addr):  
+        print(f"[CONNECTION] {addr}")  
+        with con:  
+            try:  
+                while True:  
+                    data = await self.loop.sock_recv(con,1024)  
+                    if not data:  
+                        # Executed if FIN packet received.  
+                        print(f"[DISCONNECTED] {addr}")  
+                        break  
+                    message = data.decode()  
+                    print(f"[{addr}] {message.strip()}")  
+                    con.sendall(f"Echo: {message}".encode())  
+            except ConnectionResetError:  
+                # Executed if RST packet received.  
+                print(f"[CONNECTION RESET] {addr}")  
+  
+    # Coroutine that accepts connections  
+    async def accept_connection(self):  
+        self.loop = asyncio.get_running_loop()  
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:  
+            server.bind((self.HOST, self.PORT))  
+            server.setblocking(False)  
+            server.listen()  
+            print(f"[LISTENING] Server listening on {self.HOST}:{self.PORT}")  
+            while True:  
+                conn, addr = await self.loop.sock_accept(server)  
+                asyncio.create_task(self.handle_connection(conn, addr))  
+  
+    # Thread starts the asyncio event handler.  
+    def run_thread(self):  
+        asyncio.run(self.accept_connection())  
+  
+    # Start the listener by spinning up a listener thread  
+    def start(self):  
+        thread = threading.Thread(  
+            target=self.run_thread,  
+            daemon=True  
+        )  
+        thread.start()  
+  
+async def main():  
+    targets = [('', 1066), ('localhost', 1067), ('localhost', 1068)]  
+  
+    # creating a future that is never set - a way to stop the app from exiting  
+    loop = asyncio.get_running_loop()  
+    never_arriving_future = loop.create_future()  
+  
+    # Per target, instantiate SneakListener and start it  
+    for host, port in targets:  
+        SneakListener(host, port).start()  
+  
+    # Putting main to sleep indefinitely  
+    await never_arriving_future  
+  
+if __name__ == "__main__":  
+    asyncio.run(main())
+```
+
+The coroutine `main()` is used to instantiate all of the requested listening sockets. It does this by instantiating the class, `SneakListener()` and triggering each instance's `start()` method, which starts a thread (per listening socket).  As we are relying on threads to operate the listening sockets, the `main()` coroutine cannot end, otherwise the program exits before anything really happens.
+
+To stop it from exiting early, I spent a bit of time *umming and ahhing* over how to do this. Initially I had a while loop with an `asynchio.sleep(0)` to pause `main()` for short periods. This seemed a bit over kill  just to sleep `main()` and stop the processor from being thrashed. In the end I settled on a future that never gets set. I create one using `loop.create_future()` and then at the back of `main()`, I `await` it. As the future is never set, the `await` is never fulfilled - so `main()` is kept asleep.
+
+Within `SneakListener`, there are two coroutines for managing connections. The first, `accept_connection()`, sets up a listening socket and then uses `asynio` to accept any connection. The accepted connection is then handed to the second coroutine `handle_connection()`. This coroutine is responsible for maintaining the connection and interacting with the client communicating with it.
+
+The functionality is so far fairly noddy. The coroutines are writing to the terminal, which is looking messy as they are being handled asynchronously. To tidy up the event reporting, I'm going to be capturing some proper logs using the `logging` module.
+
+Also, I'm going to use `argarse` to add some command-line options to `sneak`.
 # 27 Feb 2026
 For this entry I've done the following. I've spent a bit of time exploring of the nature of awaiting coroutines and tasks. I also briefly touch on the use of futures to coordinate activities between coroutines. Finally, I tackle the challenge of using the `socket` module asynchronously with what is provided by `asyncio`. 
 
@@ -882,6 +966,7 @@ Next steps:
 - Develop a template on localhost.
 - Test the template on Github Pages.
 - Add the most recent blog entries to GitHub pages, built on the new Jekyll template
+
 # 1 Jan 2025
 Happy New Year! May 2026 be a happy and prosperous year for all.
 
@@ -905,6 +990,7 @@ The main problem for now is the time between changing the files in the repo, and
 - Modifying the Dinky layout by including a '_layouts/default.html' file
 - Adding bootstrap  Javascript and CSS links.
 - Starting to structure the web page - menu on the left, content in the middle and future advertising to the right, etc.
+
 # 29 Dec 2025
 For my 2026 New Year's resolution,  I've decided to set myself technical challenges and document my progress for anyone to follow. I'm starting a bit early, just to get everything set up.
 
