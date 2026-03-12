@@ -1,6 +1,42 @@
 ---
 layout: default
 ---
+# 12 March 2026
+I want to avoid using print statements as it looks messy as each socket is being run asynchronously in their own threads and therefore compete for stdout. Also, it would be good to have a method of eventually dumping the output to a log file that could be ingested into a SIEM or some other kind of analytics tool.
+
+The best solution for python is the `logging` module. It is fairly easy to use. When the app firsts runs, logging is initialised (configured) using `logger.basicConfig()`. Afterwards, you can send a message out using logger using one of the following:
+- `logging.info()`
+- `logging.debug()`
+- `logging.warning()`
+- `logging.error()`
+- `logging.critical()`
+
+The message level isn't really important for what I'm trying to achieve, so `logging.warning()` is fine.
+
+To following is used to define what the messages look like the following.
+```
+import logger
+logging.basicConfig(level=logging.INFO, format="{asctime} - {message}", style="{", datefmt="%Y-%m-%d %H:%M:%S")
+```
+
+It is worth noting that once `logging basicConfig()` is run, if run again, it won't make changes to any change to its attributes - which is very annoying when experimenting in the REPL. 
+
+The main purpose for me running `logging.basicConfig()` is to  define the structure of the logged messages. The timestamp structure is chosen to be ISO8601 compliant. The timestamp is separated from the message using a hyphen. The formatting looks like this.
+```
+<timestamp> - <src_ip> <src_port> <dst_ip> <dst_port> <message>
+```
+
+Within `SneakListener()`, I've added another method, `log_message()`, which takes the socket object and the address tuple, along with a message. It then calls `logger.warning()`, to print out the event.
+```
+# Method to log messages  
+def log_message(self, con, addr, msg):  
+    src_ip, src_port = addr  
+    dst_ip, dst_port = con.getsockname()  
+    log_msg = f"{src_ip} {src_port} {dst_ip} {dst_port} {msg}"  
+    logging.warning(log_msg)
+```
+
+The different kinds of messages `sneak` outputs are: an accepted connection; a closed connection; a reset connection; and any data (bytes) sent by the connected client.
 # 11 March 2026
 Re-visiting `sneak`, I've re-written it using `asyncio` for the connections and `threading` for each listening port. It seems to work reasonably well. Code is below and I'm also uploading this to GitHub - please refer to [sneak](https://github.com/AnnualChallenge/sneak). 
 
