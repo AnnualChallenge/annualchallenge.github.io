@@ -4,7 +4,7 @@ layout: default
 # 12 March 2026
 I want to avoid using print statements as it looks messy as each socket is being run asynchronously in their own threads and therefore compete for stdout. Also, it would be good to have a method of eventually dumping the output to a log file that could be ingested into a SIEM or some other kind of analytics tool.
 
-The best solution for python is the `logging` module. It is fairly easy to use. When the app firsts runs, logging is initialised (configured) using `logger.basicConfig()`. Afterwards, you can send a message out using logger using one of the following:
+The best solution for python is the `logging` module. It is fairly easy to use. When the app firsts runs, logging is initialised (configured) using `logging.basicConfig()`. Afterwards, you can send a message out using logging using one of the following:
 - `logging.info()`
 - `logging.debug()`
 - `logging.warning()`
@@ -19,7 +19,7 @@ import logger
 logging.basicConfig(level=logging.INFO, format="{asctime} - {message}", style="{", datefmt="%Y-%m-%d %H:%M:%S")
 ```
 
-It is worth noting that once `logging basicConfig()` is run, if run again, it won't make changes to any change to its attributes - which is very annoying when experimenting in the REPL. 
+It is worth noting that once `logging basicConfig()` is run, if run again, it won't change any of its attributes - which is very annoying when experimenting in the REPL. 
 
 The main purpose for me running `logging.basicConfig()` is to  define the structure of the logged messages. The timestamp structure is chosen to be ISO8601 compliant. The timestamp is separated from the message using a hyphen. The formatting looks like this.
 ```
