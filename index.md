@@ -1,6 +1,85 @@
 ---
 layout: default
 ---
+# 21 March 2026
+I've added a command-line interface to [sneak](https://github.com/AnnualChallenge/sneak), using the `argparse` module. It simplifies the creation of command line arguments and it also addresses the command-line tool help request.
+
+The command line options I've added are used for the following:
+- Adding TCP and UDP ports to `SneakListener()`, via `--tcp` and `--udp`.
+- Importing TCP and UDP ports from a configuration file (maybe written in JSON syntax), via `---file`. I will work on this later.
+- The ability to daemonise the process such that it runs in the background (not tied to the terminal), via `--daemon`.
+- The selection of a log-file to output to, using `--logfile`. This includes additional logic based on whether the process is daemonised or not. If it is running in a daemon mode, it automatically logs to `out.log`, unless a log-file name is specified. If running in the terminal, the log-file option will write it both to the file and to stdout.
+
+The following snippet shows the creation of the `argparse` arguments.
+```
+import argparse
+...
+
+# Defining argparse arguments  
+parser = argparse.ArgumentParser()  
+parser.add_argument("-d", "--daemon", help="Detach and run a daemon process. Default log file is output.log", action="store_true")  
+parser.add_argument("-t", "--tcp", help="List of TCP ports to listen on.")  
+parser.add_argument("-u", "--udp", help="List of UDP ports to listen on.")  
+parser.add_argument("-f", "--file", help="Configuration file that contains TCP and UDP ports to listen on.")  
+parser.add_argument("-l", "--logfile", help="Log file to capture events.")
+```
+
+The `--daemon` option isn't used yet to detach the process from the terminal. This will be added later. For now I'd like to get the core functionality working for the rest of the options.
+
+To handle the TCP and UDP requests, I've added a separate method that takes in the arguments in a string form, and outputs a list of tuples that includes the: `(HOST, PORT, PROTOCOL)`.
+```
+# Extract the host and port to be listened to  
+def process_ports(string_in, proto):  
+    split_string = string_in.split(',')  
+  
+    port_targets = []  
+    for i in split_string:  
+        host, port = i.split(':')  
+        port_targets.append((proto, host, int(port)))
+        
+async def main():
+	args = parser.parse_args()
+	...
+
+	# Extract the ports to be listened on  
+	targets = []  
+	if args.tcp:  
+	    targets.extend(process_ports(args.tcp, 'tcp'))  
+	elif args.udp:  
+	    targets.extend(process_ports(args.tcp, 'udp'))  
+	else:  
+	    exit("No ports configured")
+	...
+	
+	# Per target, instantiate SneakListener and start it  
+	for protocol, host, port in targets:  
+	    SneakListener(host, port, protocol).start()
+```
+Both the UDP and TCP ports are added to a single `targets` list. This is then iterated over later to create individual `SneakListener()` threads. Currently, UDP ports aren't handled by `SneakListener()`. Something else for the to-do list.
+
+The following code addresses the 'writing to a log file' dependencies between the `--daemon` and the `--logfile` options. If I want to daemonise the service,  then I want it to by default  write to `out.log`, unless I choose the file using `--logfile`. If running in the terminal (so I see the output in stdout), if I choose `--logfile`, I want it to write to both stdout and the log file. 
+```
+asynch def main():
+...
+
+#Logging configuration  
+if args.daemon:  
+    logfile = "out.log"  
+    if args.logfile:  
+        logfile=args.logfile  
+    logging_args = {'level':logging.INFO, 'format':"{asctime} - {message}",  
+                        'style':"{", 'datefmt':"%Y-%m-%d %H:%M:%S", 'filename':logfile}  
+else:  
+    if args.logfile:  
+        logging_args = {'level':logging.INFO, 'format':"{asctime} - {message}",  
+                        'style':"{", 'datefmt':"%Y-%m-%d %H:%M:%S",  
+                        'handlers': [logging.FileHandler(args.logfile), logging.StreamHandler()]}  
+    else:  
+        logging_args = {'level':logging.INFO, 'format':"{asctime} - {message}",  
+                        'style':"{", 'datefmt':"%Y-%m-%d %H:%M:%S"}  
+logging.basicConfig(**logging_args)
+```
+
 # 12 March 2026
 I want to avoid using print statements as it looks messy as each socket is being run asynchronously in their own threads and therefore compete for stdout. Also, it would be good to have a method of eventually dumping the output to a log file that could be ingested into a SIEM or some other kind of analytics tool.
 
