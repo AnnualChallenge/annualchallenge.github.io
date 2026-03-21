@@ -11,4 +11,10 @@ main h3 {
 main p {
   margin-bottom: 1.25rem;
 }
+pre {
+  background-color: #EEEEEE; /* dark background */
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+}
 
