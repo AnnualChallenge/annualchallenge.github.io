@@ -1,6 +1,51 @@
 ---
 layout: default
 ---
+# 22 March 2026
+Based on a bit of trial and error, I've settled on a config file format (in JSON) that looks like the following:
+```
+{  
+  "tcp": {  
+    "localhost": [8080, 8443],  
+    "": [1066]  
+  },  
+  "udp": {  
+    "localhost": [53]  
+  }  
+}
+```
+
+It is split hierarchically based on whether the ports are TCP or UDP. After that, they are then split based on the host IP, followed by a list of ports to listen to. An empty host means that the port is accessible from all host endpoints on the device. Its structure is such that it should be fairly easy to add or remove ports with minimal changes to the file. 
+
+NOTE: UDP processing hasn't been created yet. If you playing with `sneak`, avoid using `--udp` and the JSON 'udp' option for now.
+
+I'm using the `json` module to ingest the JSON as a dictionary. If the `--file` option is used, the following code in  [sneak](https://github.com/AnnualChallenge/sneak) is used to extract the desired protocols, hosts and ports and submit it to the `process_ports()` method. This returns the results in a form that can then be used with `SneakListener(host, port, protocol)`. The code that handles the JSON configuration file looks like this:
+```
+import json
+...
+
+async def main():
+...
+
+if args.file: # Ingest json file and add to targets  
+    with open(args.file, 'r') as file:  
+        config = json.load(file)  
+    for proto in config.keys():  
+        for host_ports in config[proto].items():  
+            host = host_ports[0]  
+            for port in host_ports[1]:  
+                targets.extend(process_ports(f"{host}:{port}",  proto))
+```
+
+It is worth noting that the JSON file is processed in addition to the `--tcp` and `--udp` options. So, any combination can be used to add ports for `sneak` to enable and start listening to.
+
+In addition to this, I've also spun up and AWS EC2 instance and I've set `sneak` running using the following command-line options:
+```
+$> sudo .sneak/bin/python3 sneak.py -t ':21,:22,:25,:80,:443,:135,:139,:445,:3389,:8080,:8443' -d
+```
+
+It is running in `--daemon` mode so I don't need to keep my SSH session alive, and the events are being written to the default log file: `out.log`. I'm curious to see what the results will be. For my next entry, I'll try to do a bit of analysis of the log file, using Python.  
+
 # 21 March 2026
 I've added a command-line interface to [sneak](https://github.com/AnnualChallenge/sneak), using the `argparse` module. It simplifies the creation of command line arguments and it also addresses the command-line tool help request.
 
@@ -499,7 +544,7 @@ async def main():
   
 asyncio.run(main())
 ```
-## Adding Asynch Functionality to a Synch code
+## Adding Async Functionality to a Sync code
 `asyncio` Can be used to handle synchronous functions asynchronously. The following  demonstrates how this is done using `run_in_executor()`. The way `asyncio` handles synchronous functions is to hand them off to either a thread or process pool, to prevent them from blocking the rest of the code. The downside is that this approach adds on the thread / process handling overhead. 
 ```
 import asyncio  
