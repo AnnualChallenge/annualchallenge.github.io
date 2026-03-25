@@ -1,6 +1,147 @@
 ---
 layout: default
 ---
+# 25 March 2026
+I've spent a bit of time analysing the collected logs using Jupyter Labs. Installing Jupyter is fairly simple to do into a Python `venv`. When run it opens up a browser to the Jupyter server. If you haven't used Jupyter before, I suggest playing with it as it is GREAT!
+```
+$> python3 -m venv .jupyter
+$> source .jupyter/bin/activate
+(.jupyter)$> pip install jupyterlab
+(.jupyter)$> jupyter lab
+```
+
+The log file, stored as `aws_test.log` for the purposes of this analysis, was copied across from the an AWS instance running `sneak`. The run configuration for `sneak` was:
+```
+$> sudo .sneak/bin/python3 sneak.py -t ':21,:22,:25,:80,:443,:135,:139,:445,:3389,:8080,:8443' -d
+```
+
+The chosen ports used are a result of a Google search to find the most common ports to be scanned over the Internet. Note, the SSH port was included. I had to move the SSH to another port on my AWS EC2 instance to free up port 22 for sneak. It is also worth noting (given the port ranges I want to listen to) that `sneak` had to be run as root.
+
+The outcome of the test-run of `sneak` was very interesting. In a little over 2 days, it produced an 8.2MB log file - which I find amazing as `sneak` doesn't do any kind of interaction beyond accepting and maintaining a TCP connection.
+
+The total number of events recorded was: 60092.
+```
+with open('aws_test.log', 'r') as file:
+    text = file.read()
+
+text_list = text.split('\n')
+print(f"Total number of events: {len(text_list)}")
+```
+
+To enable me to process the content, each line needed to be separated out into individual variables and consumed into a `pandas.Dataframe()`. Also, some of the variables needed to be converted to a relevant type. Port addresses where turned into integers and the timestamp was converted into a pandas `datetime` object (to allow me to perform date-time calculations). This code also uses the date-time records to show the time delta between the first recorded event and the last - `2 days 03:51:27`.
+```
+import re
+import pandas as pd
+
+# Regex to break down each log-line into attributes for the DataFrame
+pattern = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - "  # timestamp
+    r"(\d+\.\d+\.\d+\.\d+) "                      # source IP
+    r"(\d+) "                                     # source port
+    r"(\d+\.\d+\.\d+\.\d+) "                      # destination IP
+    r"(\d+) "                                     # destination port
+    r"(.+)$"                                      # message
+)
+
+text_processed = []
+for i in text_list:
+    matched = pattern.match(i)
+    if matched:
+        text_processed.append(matched.groups())
+
+df = pd.DataFrame(text_processed, columns =['timestamp', 'src_ip', 
+                                            'src_port', 'dst_ip', 
+                                            'dst_port', 'message'])
+
+# Defining the data types of the DataFrame columns
+df = df.astype({
+    "timestamp": "string",
+    "src_ip": "string",
+    "src_port": "int",
+    "dst_ip": "string",
+    "dst_port": "int",
+    "message": "string"
+})
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+# Calculating time-stamp delta between the last and first entries
+duration = df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]
+print(f"The total time the sneak test-run was performed for was: {duration}")    
+```
+
+When looking at the destination ports - by far the most targeted port was 445 (SMB) - which I wasn't expecting. Of the 60092 events, 56148 were on port 445.
+```
+# Some basic stats on the different connections
+port_distribution = df['dst_port'].value_counts()
+
+for i in port_distribution.index:
+    print(f"Port {i} received {port_distribution[i]} events")
+```
+
+Here is the breakdown of the event distribution across the listening ports.
+```
+Port 445 received 56148 events
+Port 80 received 1341 events
+Port 443 received 1269 events
+Port 3389 received 288 events
+Port 21 received 279 events
+Port 8443 received 222 events
+Port 8080 received 211 events
+Port 22 received 158 events
+Port 25 received 74 events
+Port 135 received 73 events
+Port 139 received 28 events
+```
+
+When looking through the log files, I also noticed some interesting `User-Agent` headers being sent to ports 80 and 443 (HTTP and HTTPS). To help analyse these headers, the first step was to create a new DataFrame just containing events from those 2 ports, followed by extracting the `User-Agent` content with the help of a DataFrame regex.
+
+There were 34 distinct `User-Agent` headers captured. Most where as expected, but there were some interesting ones from security companies doing scanning. These were:
+- Nokia (GenomeCrawler);
+- Palo Alto (Cortex Scanning);
+- Internet Measurement;
+- Censys Inspect; and 
+- A lonely instance of 'Hello, World'.
+```
+# Getting some HTTP and HTTPS stats
+df_http = df[(df['dst_port']==80) | (df['dst_port']==443)]
+distinct_user_agents = df_http['message'].str.extract(r"User-Agent:\s*(.*?)\\r\\n")[0].value_counts()
+distinct_user_agents.index.name = "User-Agents"
+
+print(f"The number of distinct User-Agents used for connecting to ports 80 & 443 are: {len(distinct_user_agents.index)}\n\n")
+print(f"The User-Agents are...\n")
+for i in distinct_user_agents.index:
+    print(i)
+```
+
+I then looked at SMB (as that is where most of the traffic was aimed). Of a total of 56148 events going to port 445, 55065 of them were coming from a single IP address: 45.43.55.119. I did a Geolookup of that IP address and it appears to be coming from Tapei. I really don't know what they were trying to do as `sneak` doesn't engage beyond maintaining a TCP connection.
+```
+# SMB analysis
+df_smb = df[df['dst_port']==445]
+df_smb['src_ip'].value_counts()
+
+print(f"By far the largest number of events were to port 445 - a total of {len(df_smb)}")
+print(f"The vast majority was from a single IP address: {df_smb['src_ip'].value_counts().index[0]}\n")
+print("Here is the value count by SRC IP")
+print(df_smb['src_ip'].value_counts())
+```
+
+Just to show how ridiculous the traffic was to port 445, here is a an extract of the printed distribution.
+```
+src_ip
+45.43.55.119       55065
+154.134.185.110      857
+61.153.205.10         24
+16.58.56.214          21
+66.132.224.79         20
+159.65.219.252        18
+3.131.220.121         12
+20.169.104.239         9
+74.235.162.254         9
+64.227.110.161         9
+103.124.153.190        6
+```
+
+In conclusion, I think `sneak` is working very well. Despite the high traffic going to the ports, the CPU processing on my minimal EC2 instance barely got above 3%. The next step is to add UDP support.
 # 22 March 2026
 Based on a bit of trial and error, I've settled on a config file format (in JSON) that looks like the following:
 ```
