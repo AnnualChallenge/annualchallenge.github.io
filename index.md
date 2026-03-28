@@ -1,6 +1,77 @@
 ---
 layout: default
 ---
+# 28 March 2026
+The final addition to `sneak` is UDP support. Using UDP is very similar to TCP. The main differences are that with UDP, you don't need to use the `listen()` and `accept()` methods. As a refresher, the following shows the fundamentals for TCP and UDP connections. The TCP example looks like this:
+```
+import socket  
+  
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+sock.bind(('', 1066))  
+sock.listen()  
+# Accepting a connection - needed for TCP  
+conn, addr = sock.accept()  
+  
+while True:  
+    data = conn.recv(1024)  
+    print(data)
+```
+
+The same code for a UDP server is this:
+```
+import socket  
+  
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
+sock.bind(('', 1066))  
+  
+while True:  
+    data, addr = sock.recvfrom(1024)  
+    print(data)
+```
+
+For `sneak` I'm using the low-level networking controls for `asyncio`, so the fundamentals are slightly different. I suggest looking at the code and the previous blog entries.
+
+To accommodate UDP the following changes are made within `accept_connection()`:
+```
+class SneakListener():
+	...
+	async def accept_connection(self):  
+	    if self.PROTO == 'udp':  
+	        self.loop = asyncio.get_running_loop()  
+	        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:  
+	            server.bind((self.HOST, self.PORT))  
+	            server.setblocking(False)  
+	            while True:  
+	                data, addr = await self.loop.sock_recvfrom(server, 1024)  
+	                asyncio.create_task(self.handle_connection(server, addr, data=data))  
+	    else:
+		    ...
+```
+
+And, the following are made within `handle_connection()`:
+```
+class SneakListener():
+	...
+	async def handle_connection(self, con, addr, data=None):  
+	    if self.PROTO=='udp':  
+	        self.log_message(con, addr, data.strip())  
+	    else:
+		    ...
+```
+
+The `log_message()` method has also been updated to include UDP and TCP within the messages so it is clear as to which protocol is being used to connect to the ports. 
+```
+class SneakListener():  
+	...
+    # Method to log messages  
+    def log_message(self, con, addr, msg):  
+        src_ip, src_port = addr  
+        dst_ip, dst_port = con.getsockname()  
+        log_msg = f"{self.PROTO.upper()} {src_ip} {src_port} {dst_ip} {dst_port} {msg}"  
+        logging.warning(log_msg)
+```
+
+And with that, this brings `sneak` to an end. When I originally started, I wanted to make a light-weight python app that could be used to listen to ports and detect attempted connections. I kind of saw this as a way of deploying lightweight sensors (at under 200 lines) to environments to be used to detect potential lateral movement attempts. This could be deployed onto low-cost hardware too, such as Raspberry Pi Zeros and plugged into the network. With a bit of syslog configuration, an enterprise could then ingest the logs into the SIEM. Low cost and simple to use!
 # 25 March 2026
 I've spent a bit of time analysing the collected logs using Jupyter Labs. Installing Jupyter is fairly simple to do into a Python `venv`. When run it opens up a browser to the Jupyter server. If you haven't used Jupyter before, I suggest playing with it as it is GREAT!
 ```
